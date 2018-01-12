@@ -6,6 +6,7 @@ import (
   "io/ioutil"
   "log"
   "os"
+  "path"
 
   "github.com/euforic/graphql-gen-go/generator"
   "github.com/spf13/cobra"
@@ -15,6 +16,7 @@ import (
 var (
   cfgFile string
   pkgName string
+  outDir  string
 )
 
 // RootCmd represents the base command when called without any subcommands
@@ -35,16 +37,29 @@ var RootCmd = &cobra.Command{
       fileData.WriteString("\n")
       fileData.Write(f)
     }
+
     g := generator.New()
     err := g.Parse(fileData.Bytes())
-    if err != nil {
-      log.Fatal(err)
+    check(err)
+    out, _ := g.SetPkgName(pkgName).GenSchemaResolversFile()
+
+    outFile := pkgName + ".gql.go"
+    targetDir := path.Join(outDir, "/", pkgName)
+    outFile = path.Join(targetDir, outFile)
+
+    // create directory if it does not exist
+    if _, err = os.Stat(targetDir); os.IsNotExist(err) {
+      os.Mkdir(targetDir, os.ModePerm)
     }
-    _, typs := g.SetPkgName(pkgName).GenSchemaResolversFile()
-    for _, t := range typs {
-      fmt.Println(t.GenStruct())
-    }
-    //fmt.Println(out)
+
+    // open the file and write to it
+    f, err := os.Create(outFile)
+    check(err)
+    defer f.Close()
+
+    _, err = f.Write(out)
+    check(err)
+    f.Sync()
   },
 }
 
@@ -52,7 +67,7 @@ var RootCmd = &cobra.Command{
 // This is called by main.main(). It only needs to happen once to the rootCmd.
 func Execute() {
   if err := RootCmd.Execute(); err != nil {
-    fmt.Println(err)
+    log.Fatal(err)
     os.Exit(-1)
   }
 }
@@ -61,6 +76,7 @@ func init() {
   cobra.OnInitialize(initConfig)
   RootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file (default is $HOME/.graphql-gen-go.yaml)")
   RootCmd.PersistentFlags().StringVar(&pkgName, "pkg", "main", "generated golang package name")
+  RootCmd.PersistentFlags().StringVar(&outDir, "out_dir", "./", "output directory (default is current directory)")
 }
 
 // initConfig reads in config file and ENV variables if set.
@@ -76,5 +92,11 @@ func initConfig() {
   // If a config file is found, read it in.
   if err := viper.ReadInConfig(); err == nil {
     fmt.Println("Using config file:", viper.ConfigFileUsed())
+  }
+}
+
+func check(err error) {
+  if err != nil {
+    log.Fatal(err)
   }
 }
