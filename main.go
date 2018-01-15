@@ -4,7 +4,7 @@ import (
   "fmt"
   "os"
 
-  "github.com/euforic/graphql-gen-go/cmd"
+  "github.com/dealtap/graphql-gen-go/cmd"
 )
 
 func main() {

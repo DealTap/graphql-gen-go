@@ -8,7 +8,7 @@ import (
   "os"
   "path"
 
-  "github.com/euforic/graphql-gen-go/generator"
+  "github.com/dealtap/graphql-gen-go/generator"
   "github.com/spf13/cobra"
   "github.com/spf13/viper"
 )
