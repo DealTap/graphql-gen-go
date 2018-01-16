@@ -178,7 +178,7 @@ FindGoType:
       td.GQLType = "string"
     } else {
       td.GoType = pts(tp.Name())
-      td.GQLType = lowerFirst(pts(tp.Name())) + "Resolver"
+      td.GQLType = pts(tp.Name()) + "Resolver"
     }
   }
   return
@@ -237,7 +237,7 @@ func (t *TypeDef) GenInterfaceResStruct(typePkgName string) string {
   if typePkgName != "" {
     typePkgName = typePkgName + "."
   }
-  r := "type " + lowerFirst(t.Name) + "Resolver struct {\n"
+  r := "type " + t.Name + "Resolver struct {\n"
   r += "  r *" + t.Name + "\n"
   r += "}"
   return r
@@ -245,7 +245,7 @@ func (t *TypeDef) GenInterfaceResStruct(typePkgName string) string {
 
 // FIXME could be refactored and become part of GenResStruct()
 func (f *FieldDef) GenFuncArgs() string {
-  r := "type " + lowerFirst(f.Name) + "Args struct {\n"
+  r := "type " + f.Name + "Args struct {\n"
   for _, arg := range f.Args {
     r += "  " + arg.Name + " " + arg.Type.genType("struct") + "\n"
   }
@@ -266,7 +266,7 @@ func (t *TypeDef) GenResStruct(typePkgName string) string {
   if typePkgName != "" {
     typePkgName = typePkgName + "."
   }
-  r := "type " + lowerFirst(t.Name) + "Resolver struct {\n"
+  r := "type " + t.Name + "Resolver struct {\n"
   r += "  r *" + t.Name + "\n"
   r += "}"
   return r
@@ -276,7 +276,7 @@ func (t *TypeDef) GenResStruct(typePkgName string) string {
 func (f *FieldDef) GenResolver() string {
   res := f.Type.genType("resolver")
   returnType := res
-  r := "func (r *" + lowerFirst(f.Parent) + "Resolver) " + f.Name + "("
+  r := "func (r *" + f.Parent + "Resolver) " + f.Name + "("
   r += ") " + res + " {\n"
   itm := ""
 
@@ -361,15 +361,15 @@ func (f *FieldDef) GenResolver() string {
 }
 
 func (t *TypeDef) GenUnionResStruct() string {
-  r := "type " + lowerFirst(t.Name) + "Resolver struct {\n"
+  r := "type " + t.Name + "Resolver struct {\n"
   r += "  result interface{}\n"
   r += "}"
   return r
 }
 
 func (t *TypeDef) GenUnionResolver(parentName string) string {
-  r := "func (r *" + lowerFirst(t.Name) + "Resolver) To" + parentName + "() (*" + lowerFirst(parentName) + "Resolver, bool) {\n"
-  r += "  res, ok := r.result.(*" + lowerFirst(parentName) + "Resolver)\n"
+  r := "func (r *" + t.Name + "Resolver) To" + parentName + "() (*" + parentName + "Resolver, bool) {\n"
+  r += "  res, ok := r.result.(*" + parentName + "Resolver)\n"
   r += "  return res, ok\n"
   r += "}"
   return r
@@ -547,7 +547,8 @@ func (g Generator) GenSchemaResolversFile() ([]byte, []*TypeDef) {
       }
       types = append(types, gtp)
     case gqlSCALAR:
-      //TODO: Implement union type code generation
+      //TODO: Implement scalar type code generation
+      fmt.Printf("%s not implemented yet\n", *typ.Name())
     case gqlINTERFACE:
       gtp := NewType(typ)
 
@@ -569,19 +570,17 @@ func (g Generator) GenSchemaResolversFile() ([]byte, []*TypeDef) {
         g.P("")
       }
     case gqlINPUT_OBJECT:
-      //TODO: Implement union type code generation
-      //fmt.Println("Input Object ", *typ.Name())
+      //TODO: Implement input type code generation
+      fmt.Printf("%s not implemented yet\n", *typ.Name())
     default:
-      //TODO: Implement union type code generation
-      //fmt.Println("unknown graphql type ", *typ.Name(), ":", typ.Kind())
+      fmt.Println("unknown graphql type ", *typ.Name(), ":", typ.Kind())
     }
   }
 
-  g.P("")
   g.P("var Schema = `")
   g.P(string(g.rawSchema))
-  g.P("")
   g.P("`")
+
   return g.Bytes(), types
 }
 
