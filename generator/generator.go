@@ -65,17 +65,23 @@ type TypeDef struct {
 }
 
 func NewType(t *introspection.Type) (typ *TypeDef) {
+
   tp := &TypeDef{
     Name:        pts(t.Name()),
     Description: pts(t.Description()),
     Fields:      map[string]*FieldDef{},
     gqlType:     t,
   }
-  for _, fld := range *t.Fields(nil) {
-    f := NewField(fld)
-    f.Parent = tp.Name
-    tp.Fields[f.Name] = f
+
+  // union do not have fields and it throws nil pointer dereference error
+  if t.Kind() != gqlUNION {
+    for _, fld := range *t.Fields(nil) {
+      f := NewField(fld)
+      f.Parent = tp.Name
+      tp.Fields[f.Name] = f
+    }
   }
+
   return tp
 }
 
@@ -167,7 +173,7 @@ FindGoType:
     td.GoType = "time.Time"
     td.GQLType = "graphql.Time"
   default:
-    if tp.Kind() == "ENUM" {
+    if tp.Kind() == gqlENUM {
       td.GoType = "string"
       td.GQLType = "string"
     } else {
@@ -220,7 +226,7 @@ func (t *TypeDef) GenInterface() string {
     if len(fld.Args) > 0 {
       r += lowerFirst(fld.Name) + "Args"
     }
-    r += ") " + fld.Type.genType("") + "\n"
+    r += ") " + fld.Type.genType("interface") + "\n"
   }
   r += "}"
   return r
@@ -351,6 +357,21 @@ func (f *FieldDef) GenResolver() string {
   }
 
   r += "\n}"
+  return r
+}
+
+func (t *TypeDef) GenUnionResStruct() string {
+  r := "type " + lowerFirst(t.Name) + "Resolver struct {\n"
+  r += "  result interface{}\n"
+  r += "}"
+  return r
+}
+
+func (t *TypeDef) GenUnionResolver(parentName string) string {
+  r := "func (r *" + lowerFirst(t.Name) + "Resolver) To" + parentName + "() (*" + lowerFirst(parentName) + "Resolver, bool) {\n"
+  r += "  res, ok := r.result.(*" + lowerFirst(parentName) + "Resolver)\n"
+  r += "  return res, ok\n"
+  r += "}"
   return r
 }
 
@@ -502,8 +523,10 @@ func (g Generator) GenSchemaResolversFile() ([]byte, []*TypeDef) {
 
       g.P(gtp.GenStruct())
       g.P("")
+
       g.P(gtp.GenResStruct(""))
       g.P("")
+
       for _, f := range gtp.Fields {
         // declare function argument struct only once
         fnArgName := lowerFirst(f.Name) + "Args"
@@ -536,7 +559,15 @@ func (g Generator) GenSchemaResolversFile() ([]byte, []*TypeDef) {
     case gqlENUM:
       //TODO: should we generate a pseudo enum or stick with string?
     case gqlUNION:
-      //TODO: Implement union type code generation
+      gtp := NewType(typ)
+
+      g.P(gtp.GenUnionResStruct())
+      g.P("")
+
+      for _, t := range *typ.PossibleTypes() {
+        g.P(gtp.GenUnionResolver(pts(t.Name())))
+        g.P("")
+      }
     case gqlINPUT_OBJECT:
       //TODO: Implement union type code generation
       //fmt.Println("Input Object ", *typ.Name())
