@@ -22,6 +22,8 @@ const (
   gqlENUM         = "ENUM"
   gqlDIRECTIVE    = "DIRECTIVE"
   gqlID           = "ID"
+  gqlQuery        = "Query"
+  gqlMutation     = "Mutation"
 )
 
 var KnownGQLTypes = map[string]bool{
@@ -33,11 +35,7 @@ var KnownGQLTypes = map[string]bool{
   "__Schema":            true,
   "__Type":              true,
   "__TypeKind":          true,
-  "Query":               true,
-  "Mutation":            true,
   "LIST":                true,
-  "ENUM":                true,
-  "INTERFACE":           true,
   "String":              true,
   "Float":               true,
   "ID":                  true,
@@ -94,15 +92,18 @@ type FieldDef struct {
   Args        []*FieldDef
 }
 
-func NewField(t *introspection.Field) (fld *FieldDef) {
-
-  name := upperFirst(t.Name())
+func fieldName(name string) string {
+  name = upperFirst(name)
   if name == "Id" {
     name = "ID"
   }
+  return name
+}
+
+func NewField(t *introspection.Field) (fld *FieldDef) {
 
   fld = &FieldDef{
-    Name:        name,
+    Name:        fieldName(t.Name()),
     Description: pts(t.Description()),
     Type: &Typ{
       IsNullable: true,
@@ -114,7 +115,7 @@ func NewField(t *introspection.Field) (fld *FieldDef) {
   // parse arguments (i.e., interface function)
   for _, arg := range t.Args() {
     argFld := &FieldDef{
-      Name:        upperFirst(arg.Name()),
+      Name:        fieldName(arg.Name()),
       Description: pts(arg.Description()),
       Type: &Typ{
         IsNullable: true,
@@ -164,6 +165,8 @@ FindGoType:
     td.GoType = "float32"
     td.GQLType = "float32"
   case "ID":
+    // TODO - shouldn't we use graphql.ID type for `ID` fields
+    // because it may not work for query and mutation calls?
     td.GoType = "string"
     td.GQLType = "graphql.ID"
   case "Boolean":
@@ -221,12 +224,12 @@ func (t Typ) genType(mode string) string {
 // FIXME could be refactored and become part of GenStruct()
 func (t *TypeDef) GenInterface() string {
   r := "type " + t.Name + " interface {\n"
-  for _, fld := range t.Fields {
-    r += "  " + fld.Name + "("
-    if len(fld.Args) > 0 {
-      r += lowerFirst(fld.Name) + "Args"
+  for _, f := range t.Fields {
+    r += "  " + f.Name + "("
+    if len(f.Args) > 0 {
+      r += f.Name + "Request"
     }
-    r += ") " + fld.Type.genType("interface") + "\n"
+    r += ") " + f.Type.genType("interface") + "\n"
   }
   r += "}"
   return r
@@ -239,16 +242,6 @@ func (t *TypeDef) GenInterfaceResStruct(typePkgName string) string {
   }
   r := "type " + t.Name + "Resolver struct {\n"
   r += "  r *" + t.Name + "\n"
-  r += "}"
-  return r
-}
-
-// FIXME could be refactored and become part of GenResStruct()
-func (f *FieldDef) GenFuncArgs() string {
-  r := "type " + f.Name + "Args struct {\n"
-  for _, arg := range f.Args {
-    r += "  " + arg.Name + " " + arg.Type.genType("struct") + "\n"
-  }
   r += "}"
   return r
 }
@@ -268,6 +261,16 @@ func (t *TypeDef) GenResStruct(typePkgName string) string {
   }
   r := "type " + t.Name + "Resolver struct {\n"
   r += "  r *" + t.Name + "\n"
+  r += "}"
+  return r
+}
+
+// FIXME could be refactored and become part of GenResStruct()
+func (f *FieldDef) GenFuncArgs() string {
+  r := "type " + f.Name + "Request struct {\n"
+  for _, arg := range f.Args {
+    r += "  " + arg.Name + " " + arg.Type.genType("struct") + "\n"
+  }
   r += "}"
   return r
 }
@@ -511,8 +514,11 @@ func (g Generator) GenSchemaResolversFile() ([]byte, []*TypeDef) {
   g.P(")")
   g.P("")
 
-  fncArgs := make(map[string]struct{})
   types := []*TypeDef{}
+  resType := &TypeDef{
+    Name:   upperFirst(g.PkgName) + "Resolver",
+    Fields: make(map[string]*FieldDef),
+  }
   for _, typ := range g.schema.Inspect().Types() {
     if KnownGQLTypes[*typ.Name()] {
       continue
@@ -520,31 +526,31 @@ func (g Generator) GenSchemaResolversFile() ([]byte, []*TypeDef) {
     switch typ.Kind() {
     case gqlOBJECT:
       gtp := NewType(typ)
+      typName := pts(typ.Name())
 
-      g.P(gtp.GenStruct())
-      g.P("")
-
-      g.P(gtp.GenResStruct(""))
-      g.P("")
-
-      for _, f := range gtp.Fields {
-        // declare function argument struct only once
-        fnArgName := lowerFirst(f.Name) + "Args"
-        _, exists := fncArgs[fnArgName]
-        if len(f.Args) > 0 && exists == false {
-          fncArgs[fnArgName] = struct{}{}
-          g.P(f.GenFuncArgs())
-          g.P("")
+      // save Query & Mutation definitions to be generated later
+      if typName == gqlQuery || typName == gqlMutation {
+        for key, value := range gtp.Fields {
+          resType.Fields[key] = value
         }
+      } else {
+        g.P(gtp.GenStruct())
+        g.P("")
 
-        // do not generate a resolver function that has additional arguments
-        // as it requires additional logic
-        // let the user create it manually
-        if len(f.Args) == 0 {
-          g.P(f.GenResolver())
-          g.P("")
+        g.P(gtp.GenResStruct(""))
+        g.P("")
+
+        for _, f := range gtp.Fields {
+          // do not generate a resolver function that has additional arguments
+          // as it requires additional logic
+          // let the user create it manually
+          if len(f.Args) == 0 {
+            g.P(f.GenResolver())
+            g.P("")
+          }
         }
       }
+
       types = append(types, gtp)
     case gqlSCALAR:
       //TODO: Implement scalar type code generation
@@ -557,6 +563,8 @@ func (g Generator) GenSchemaResolversFile() ([]byte, []*TypeDef) {
 
       g.P(gtp.GenInterfaceResStruct(""))
       g.P("")
+
+      types = append(types, gtp)
     case gqlENUM:
       //TODO: should we generate a pseudo enum or stick with string?
     case gqlUNION:
@@ -569,6 +577,8 @@ func (g Generator) GenSchemaResolversFile() ([]byte, []*TypeDef) {
         g.P(gtp.GenUnionResolver(pts(t.Name())))
         g.P("")
       }
+
+      types = append(types, gtp)
     case gqlINPUT_OBJECT:
       //TODO: Implement input type code generation
       fmt.Printf("%s not implemented yet\n", *typ.Name())
@@ -576,6 +586,26 @@ func (g Generator) GenSchemaResolversFile() ([]byte, []*TypeDef) {
       fmt.Println("unknown graphql type ", *typ.Name(), ":", typ.Kind())
     }
   }
+
+  // generate additional structs for func arguments
+  fncArgs := make(map[string]struct{})
+  for _, t := range types {
+    for _, f := range t.Fields {
+      if len(f.Args) > 0 {
+        fnArgName := f.Name + "Request"
+        _, exists := fncArgs[fnArgName]
+        if exists == false {
+          fncArgs[fnArgName] = struct{}{}
+          g.P(f.GenFuncArgs())
+          g.P("")
+        }
+      }
+    }
+  }
+
+  // generate interface for Query & Mutation
+  g.P(resType.GenInterface())
+  g.P("")
 
   g.P("var Schema = `")
   g.P(string(g.rawSchema))
