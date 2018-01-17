@@ -62,7 +62,7 @@ type TypeDef struct {
   gqlType     *introspection.Type
 }
 
-func NewType(t *introspection.Type) (typ *TypeDef) {
+func NewType(t *introspection.Type) *TypeDef {
 
   tp := &TypeDef{
     Name:        pts(t.Name()),
@@ -71,11 +71,21 @@ func NewType(t *introspection.Type) (typ *TypeDef) {
     gqlType:     t,
   }
 
-  // union do not have fields and it throws nil pointer dereference error
-  if t.Kind() != gqlUNION {
+  /**
+    * union & input object types do not have fields
+    * so we ignore it to avoid nil pointer dereference error
+    * for input object type we create fields from InputFields instead
+   */
+  if t.Kind() != gqlUNION && t.Kind() != gqlINPUT_OBJECT {
     for _, fld := range *t.Fields(nil) {
       f := NewField(fld)
       f.Parent = tp.Name
+      tp.Fields[f.Name] = f
+    }
+  } else if t.Kind() == gqlINPUT_OBJECT {
+    for _, input := range *t.InputFields() {
+      f := newField(input.Name(), input.Description(), input.Type())
+      f.Parse()
       tp.Fields[f.Name] = f
     }
   }
@@ -100,28 +110,25 @@ func fieldName(name string) string {
   return name
 }
 
-func NewField(t *introspection.Field) (fld *FieldDef) {
-
-  fld = &FieldDef{
-    Name:        fieldName(t.Name()),
-    Description: pts(t.Description()),
+func newField(name string, desc *string, typ *introspection.Type) *FieldDef {
+  return &FieldDef{
+    Name:        fieldName(name),
+    Description: pts(desc),
     Type: &Typ{
       IsNullable: true,
-      gqlType:    t.Type(),
+      gqlType:    typ,
     },
   }
+}
+
+func NewField(t *introspection.Field) *FieldDef {
+
+  fld := newField(t.Name(), t.Description(), t.Type())
   fld.Parse()
 
   // parse arguments (i.e., interface function)
   for _, arg := range t.Args() {
-    argFld := &FieldDef{
-      Name:        fieldName(arg.Name()),
-      Description: pts(arg.Description()),
-      Type: &Typ{
-        IsNullable: true,
-        gqlType:    arg.Type(),
-      },
-    }
+    argFld := newField(arg.Name(), arg.Description(), arg.Type())
     argFld.Parse()
     fld.Args = append(fld.Args, argFld)
   }
@@ -577,11 +584,10 @@ func (g Generator) GenSchemaResolversFile() ([]byte, []*TypeDef) {
         g.P(gtp.GenUnionResolver(pts(t.Name())))
         g.P("")
       }
-
-      types = append(types, gtp)
     case gqlINPUT_OBJECT:
-      //TODO: Implement input type code generation
-      fmt.Printf("%s not implemented yet\n", *typ.Name())
+      gtp := NewType(typ)
+      g.P(gtp.GenStruct())
+      g.P("")
     default:
       fmt.Println("unknown graphql type ", *typ.Name(), ":", typ.Kind())
     }
