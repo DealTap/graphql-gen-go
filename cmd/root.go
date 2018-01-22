@@ -38,29 +38,41 @@ var RootCmd = &cobra.Command{
       fileData.Write(f)
     }
 
-    g := generator.New()
-    err := g.Parse(fileData.Bytes())
+    // generate resolver output
+    resGen := generator.New()
+    err := resGen.Parse(fileData.Bytes())
     check(err)
-    out, _ := g.SetPkgName(pkgName).GenSchemaResolversFile()
+    resOut := resGen.SetPkgName(pkgName).GenSchemaResolversFile()
 
-    outFile := pkgName + ".gql.go"
+    // generate server output
+    srvGen := generator.New()
+    srvOut := srvGen.SetPkgName(pkgName).GenServerFile()
+
     targetDir := path.Join(outDir, "/", pkgName)
-    outFile = path.Join(targetDir, outFile)
-
     // create directory if it does not exist
     if _, err = os.Stat(targetDir); os.IsNotExist(err) {
       os.Mkdir(targetDir, os.ModePerm)
     }
 
-    // open the file and write to it
-    f, err := os.Create(outFile)
-    check(err)
-    defer f.Close()
+    // create resolver file
+    resFile := pkgName + ".gql.go"
+    createFile(targetDir, resFile, resOut)
 
-    _, err = f.Write(out)
-    check(err)
-    f.Sync()
+    // create server file
+    srvFile := "server.gql.go"
+    createFile(targetDir, srvFile, srvOut)
   },
+}
+
+func createFile(dir, fileName string, out []byte) {
+  outFile := path.Join(dir, fileName)
+  // open the file and write to it
+  f, err := os.Create(outFile)
+  check(err)
+  defer f.Close()
+  _, err = f.Write(out)
+  check(err)
+  f.Sync()
 }
 
 // Execute adds all child commands to the root command sets flags appropriately.

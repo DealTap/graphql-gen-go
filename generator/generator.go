@@ -507,15 +507,16 @@ func NewSchemaMap() *SchemaMap {
 }
 
 // Fill the buffer with the generated output for all the files we're supposed to generate.
-func (g Generator) GenSchemaResolversFile() ([]byte, []*TypeDef) {
+func (g Generator) GenSchemaResolversFile() []byte {
+
   g.P("package ", g.PkgName)
   g.P("")
+  // FIXME extract imports out of generator or find a better way to generate them
+  // Check protoc-gen-go codebase
   g.P("import (")
   g.In()
   // FIXME include only when time field is present
   //g.P(`"time"`)
-  // FIXME extract this out of generator or find a better way to generate imports
-  // Check protoc-gen-go codebase
   g.P(`graphql "github.com/neelance/graphql-go"`)
   g.Out()
   g.P(")")
@@ -523,7 +524,7 @@ func (g Generator) GenSchemaResolversFile() ([]byte, []*TypeDef) {
 
   types := []*TypeDef{}
   resType := &TypeDef{
-    Name:   upperFirst(g.PkgName) + "Resolver",
+    Name:   "GqlResolver",
     Fields: make(map[string]*FieldDef),
   }
   for _, typ := range g.schema.Inspect().Types() {
@@ -617,7 +618,249 @@ func (g Generator) GenSchemaResolversFile() ([]byte, []*TypeDef) {
   g.P(string(g.rawSchema))
   g.P("`")
 
-  return g.Bytes(), types
+  return g.Bytes()
+}
+
+func (g Generator) GenServerFile() []byte {
+
+  g.P("package ", g.PkgName)
+  g.P("")
+  g.P("import (")
+  g.In()
+  g.P(`"encoding/json"`)
+  g.P(`"errors"`)
+  g.P(`"io/ioutil"`)
+  g.P(`"net/http"`)
+  g.P(`"strings"`)
+  g.P(`"sync"`)
+  g.P("")
+  g.P(`graphql "github.com/neelance/graphql-go"`)
+  g.Out()
+  g.P(")")
+  g.P("")
+
+  // generate code to run graphql server
+  g.P(GenServer())
+  g.P("")
+
+  //out := append(g.Bytes(), srvFile...)
+  //return out
+  return g.Bytes()
+}
+
+func GenServer() string {
+
+  // FIXME should we read this from a file
+  s := `const (
+  ContentTypeJSON    = "application/json"
+  ContentTypeGraphQL = "application/graphql"
+  Post               = "POST"
+  Get                = "GET"
+)
+
+type GqlServer struct {
+  Schema *graphql.Schema
+  Port   string
+  // TODO add facebook dataloader
+}
+
+func NewGqlServer(res GqlResolver, port string) *GqlServer {
+  return &GqlServer{
+    Schema: graphql.MustParseSchema(Schema, res),
+    Port:   port,
+  }
+}
+
+func (g *GqlServer) Serve() error {
+  // TODO should we validate required fields of GqlServer
+  addr := ":" + g.Port
+  srv := &httpServer{g}
+  http.Handle("/graphql", srv)
+  return http.ListenAndServe(addr, nil)
+}
+
+type httpServer struct {
+  *GqlServer
+}
+
+func (h *httpServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+
+  if isContentSupported(r.Header.Get("Content-Type")) == false {
+    http.Error(w, "GraphQL only supports json and graphql content type.", http.StatusBadRequest)
+    return
+  }
+
+  req, htpErr := parse(r)
+  if htpErr != nil {
+    http.Error(w, htpErr.message, htpErr.status)
+    return
+  }
+
+  numReqs := len(req.requests)
+  responses := make([]*graphql.Response, numReqs)
+
+  // Use the WaitGroup to wait for all executions to finish
+  // TODO handle facebook data loader
+  var wg sync.WaitGroup
+  wg.Add(numReqs)
+
+  // iterate over all parsed requests and use go routine to process them in parallel
+  for i, q := range req.requests {
+    go func(i int, q gqlRequest) {
+      res := h.Schema.Exec(r.Context(), q.Query, q.OpName, q.Variables)
+      // FIXME expand returned errors to handle a resolver returning more than one error
+      responses[i] = res
+      wg.Done()
+    }(i, q)
+  }
+
+  wg.Wait()
+
+  // TODO should we log errors?
+
+  resp, err := json.Marshal(responses)
+  if err != nil {
+    http.Error(w, "Server error", http.StatusInternalServerError)
+    return
+  }
+
+  w.Header().Set("Content-Type", ContentTypeJSON)
+  w.WriteHeader(http.StatusOK)
+  w.Write(resp)
+}
+
+func isContentSupported(contentType string) bool {
+  return strings.HasPrefix(contentType, ContentTypeJSON) || strings.HasPrefix(contentType, ContentTypeGraphQL)
+}
+
+type request struct {
+  requests []gqlRequest
+  batch    bool
+}
+
+type gqlRequest struct {
+  Query     string                 ` + "`" + `json:"query"` + "`" + `
+  OpName    string                 ` + "`" + `json:"operationName"` + "`" + `
+  Variables map[string]interface{} ` + "`" + `json:"variables"` + "`" + `
+}
+
+type httpError struct {
+  status  int
+  message string
+  error
+}
+
+func parse(r *http.Request) (*request, *httpError) {
+
+  if r.Method == Get {
+    return parseGet(r)
+  } else if r.Method == Post {
+    return parsePost(r)
+  }
+
+  return nil, &httpError{
+    status:  http.StatusMethodNotAllowed,
+    message: "GraphQL only supports POST and GET requests.",
+    error:   errors.New(r.Method + " is not allowed"),
+  }
+}
+
+func parseGet(r *http.Request) (*request, *httpError) {
+
+  v := r.URL.Query()
+  var (
+    queries   = v["query"]
+    opNames   = v["operationName"]
+    variables = v["variables"]
+    qLen      = len(queries)
+    nLen      = len(opNames)
+    vLen      = len(variables)
+  )
+
+  if qLen == 0 {
+    return nil, &httpError{
+      status:  http.StatusBadRequest,
+      message: "Missing request parameters",
+      error:   errors.New("missing request parameters"),
+    }
+  }
+
+  requests := make([]gqlRequest, 0, qLen)
+
+  // This loop assumes there will be a corresponding element at each index
+  // for query, operation name, and variable fields.
+  // TODO maybe we should do some validation?
+  for i, q := range queries {
+    var opName string
+
+    if i < nLen {
+      opName = opNames[i]
+    }
+
+    var m = map[string]interface{}{}
+    if i < vLen {
+      variable := variables[i]
+      if err := json.Unmarshal([]byte(variable), &m); err != nil {
+        return nil, &httpError{
+          status:  http.StatusBadRequest,
+          message: "Unable to read variables.",
+          error:   err,
+        }
+      }
+    }
+
+    requests = append(requests, gqlRequest{q, opName, m})
+  }
+
+  return &request{requests: requests, batch: qLen > 1}, nil
+}
+
+func parsePost(r *http.Request) (*request, *httpError) {
+
+  readBodyErr := &httpError{
+    status:  http.StatusBadRequest,
+    message: "Unable to read body.",
+  }
+
+  // read and close the body
+  body, err := ioutil.ReadAll(r.Body)
+  if err != nil {
+    readBodyErr.error = err
+    return nil, readBodyErr
+  }
+  r.Body.Close()
+
+  if len(body) > 0 {
+    return nil, &httpError{
+      status:  http.StatusBadRequest,
+      message: "Missing request body.",
+      error:   errors.New("missing request body"),
+    }
+  }
+
+  var requests []gqlRequest
+
+  // Inspect the first character to inform how the body is parsed.
+  switch body[0] {
+  case '{':
+    req := gqlRequest{}
+    if err := json.Unmarshal(body, &req); err != nil {
+      readBodyErr.error = err
+      return nil, readBodyErr
+    }
+    requests = append(requests, req)
+  case '[':
+    if err := json.Unmarshal(body, &requests); err != nil {
+      readBodyErr.error = err
+      return nil, readBodyErr
+    }
+  }
+
+  return &request{requests: requests, batch: len(requests) > 1}, nil
+}
+
+`
+  return s
 }
 
 // Helper functions
