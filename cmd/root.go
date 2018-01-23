@@ -2,7 +2,6 @@ package cmd
 
 import (
   "bytes"
-  "fmt"
   "io/ioutil"
   "log"
   "os"
@@ -10,11 +9,9 @@ import (
 
   "github.com/dealtap/graphql-gen-go/generator"
   "github.com/spf13/cobra"
-  "github.com/spf13/viper"
 )
 
 var (
-  cfgFile string
   pkgName string
   outDir  string
 )
@@ -49,7 +46,7 @@ var RootCmd = &cobra.Command{
     srvOut := srvGen.SetPkgName(pkgName).GenServerFile()
 
     targetDir := outDir
-    if pkgName == "main" {
+    if pkgName != "main" {
       targetDir = path.Join(outDir, "/", pkgName)
     }
 
@@ -89,26 +86,8 @@ func Execute() {
 }
 
 func init() {
-  cobra.OnInitialize(initConfig)
-  RootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file (default is $HOME/.graphql-gen-go.yaml)")
   RootCmd.PersistentFlags().StringVar(&pkgName, "pkg", "main", "generated golang package name")
   RootCmd.PersistentFlags().StringVar(&outDir, "out_dir", "./", "output directory (default is current directory)")
-}
-
-// initConfig reads in config file and ENV variables if set.
-func initConfig() {
-  if cfgFile != "" { // enable ability to specify config file via flag
-    viper.SetConfigFile(cfgFile)
-  }
-
-  viper.SetConfigName(".graphql-gen-go") // name of config file (without extension)
-  viper.AddConfigPath("$HOME")           // adding home directory as first search path
-  viper.AutomaticEnv()                   // read in environment variables that match
-
-  // If a config file is found, read it in.
-  if err := viper.ReadInConfig(); err == nil {
-    fmt.Println("Using config file:", viper.ConfigFileUsed())
-  }
 }
 
 func check(err error) {

@@ -375,14 +375,14 @@ func (f *FieldDef) GenResolver() string {
 
 func (t *TypeDef) GenUnionResStruct() string {
   r := "type " + t.Name + "Resolver struct {\n"
-  r += "  result interface{}\n"
+  r += "  Result interface{}\n"
   r += "}"
   return r
 }
 
 func (t *TypeDef) GenUnionResolver(parentName string) string {
   r := "func (r *" + t.Name + "Resolver) To" + parentName + "() (*" + parentName + "Resolver, bool) {\n"
-  r += "  res, ok := r.result.(*" + parentName + "Resolver)\n"
+  r += "  res, ok := r.Result.(*" + parentName + "Resolver)\n"
   r += "  return res, ok\n"
   r += "}"
   return r
@@ -644,7 +644,6 @@ func (g Generator) GenServerFile() []byte {
 
   // generate code to run graphql server
   g.P(GenServer())
-  g.P("")
 
   //out := append(g.Bytes(), srvFile...)
   //return out
@@ -843,26 +842,31 @@ func parsePost(r *http.Request) (*request, *httpError) {
 
   var requests []gqlRequest
 
-  // Inspect the first character to inform how the body is parsed.
-  switch body[0] {
-  case '{':
+  // Graphql content type request will send only one query
+  if strings.HasPrefix(r.Header.Get("Content-Type"), ContentTypeGraphQL) {
     req := gqlRequest{}
-    if err := json.Unmarshal(body, &req); err != nil {
-      readBodyErr.error = err
-      return nil, readBodyErr
-    }
+    req.Query = string(body)
     requests = append(requests, req)
-  case '[':
-    if err := json.Unmarshal(body, &requests); err != nil {
-      readBodyErr.error = err
-      return nil, readBodyErr
+  } else {
+    // Inspect the first character to inform how the body is parsed.
+    switch body[0] {
+    case '{':
+      req := gqlRequest{}
+      if err := json.Unmarshal(body, &req); err != nil {
+        readBodyErr.error = err
+        return nil, readBodyErr
+      }
+      requests = append(requests, req)
+    case '[':
+      if err := json.Unmarshal(body, &requests); err != nil {
+        readBodyErr.error = err
+        return nil, readBodyErr
+      }
     }
   }
 
   return &request{requests: requests, batch: len(requests) > 1}, nil
-}
-
-`
+}`
   return s
 }
 

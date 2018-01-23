@@ -1,0 +1,50 @@
+schema {
+  query: Query
+  mutation: Mutation
+}
+
+type Query {
+  person(id: ID!): Person!
+  search(text: String!): [SearchResult]!
+}
+
+type Mutation {
+  createPerson(person: PersonInput!): Person!
+  createFolder(folder: FolderInput!): Folder!
+  createFile(folderId: ID!, file: FileInput!): File!
+}
+
+input PersonInput {
+  name: String!
+  email: String!
+}
+
+input FolderInput {
+  id: ID
+  name: String!
+}
+
+input FileInput {
+  name: String!
+}
+
+type Person {
+  id: ID!
+  name: String!
+  email: String!
+  friends(first: Int, after: ID): [Person]!
+}
+
+type Folder {
+  id: ID!
+  name: String!
+  files: [File]!
+}
+
+type File {
+  id: ID!
+  name: String!
+  folder: Folder!
+}
+
+union SearchResult = Folder | File

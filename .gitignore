@@ -2,4 +2,5 @@
 .idea/
 .vscode/
 vendor/
-sample/api
+glide.lock
+
