@@ -19,12 +19,12 @@ help:
 	@echo
 
 install:
-	@ echo "Download required dependencies"
+	@ echo "Downloading required dependencies"
 	@ glide update
 	@ echo "Finished downloading required dependencies"
 
 build:
-	@ echo "Starting build of binary file"
+	@ echo "Building binary file"
 	@ go install
 	@ echo "Finished building binary file"
 	
