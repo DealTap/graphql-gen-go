@@ -48,7 +48,11 @@ var RootCmd = &cobra.Command{
     srvGen := generator.New()
     srvOut := srvGen.SetPkgName(pkgName).GenServerFile()
 
-    targetDir := path.Join(outDir, "/", pkgName)
+    targetDir := outDir
+    if pkgName == "main" {
+      targetDir = path.Join(outDir, "/", pkgName)
+    }
+
     // create directory if it does not exist
     if _, err = os.Stat(targetDir); os.IsNotExist(err) {
       os.Mkdir(targetDir, os.ModePerm)

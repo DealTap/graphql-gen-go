@@ -207,14 +207,18 @@ func (t Typ) genType(mode string) string {
 
   var r string
 
-  if mode == "struct" {
+  if mode == "struct" || mode == "argStruct" {
     r = t.GoType
+  } else {
+    r = t.GQLType
+  }
+
+  if mode == "struct" {
     ok := KnownGoTypes[t.GoType]
     if t.IsNullable && t.GQLType != "[]" && !ok {
       r = "*" + r
     }
   } else {
-    r = t.GQLType
     if t.IsNullable {
       r = "*" + r
     }
@@ -253,10 +257,10 @@ func (t *TypeDef) GenInterfaceResStruct(typePkgName string) string {
   return r
 }
 
-func (t *TypeDef) GenStruct() string {
+func (t *TypeDef) GenStruct(typ string) string {
   r := "type " + t.Name + " struct {\n"
   for _, fld := range t.Fields {
-    r += "  " + fld.Name + " " + fld.Type.genType("struct") + "\n"
+    r += "  " + fld.Name + " " + fld.Type.genType(typ) + "\n"
   }
   r += "}"
   return r
@@ -267,7 +271,7 @@ func (t *TypeDef) GenResStruct(typePkgName string) string {
     typePkgName = typePkgName + "."
   }
   r := "type " + t.Name + "Resolver struct {\n"
-  r += "  r *" + t.Name + "\n"
+  r += "  R *" + t.Name + "\n"
   r += "}"
   return r
 }
@@ -276,7 +280,7 @@ func (t *TypeDef) GenResStruct(typePkgName string) string {
 func (f *FieldDef) GenFuncArgs() string {
   r := "type " + f.Name + "Request struct {\n"
   for _, arg := range f.Args {
-    r += "  " + arg.Name + " " + arg.Type.genType("struct") + "\n"
+    r += "  " + arg.Name + " " + arg.Type.genType("argStruct") + "\n"
   }
   r += "}"
   return r
@@ -286,7 +290,7 @@ func (f *FieldDef) GenFuncArgs() string {
 func (f *FieldDef) GenResolver() string {
   res := f.Type.genType("resolver")
   returnType := res
-  r := "func (r *" + f.Parent + "Resolver) " + f.Name + "("
+  r := "func (r " + f.Parent + "Resolver) " + f.Name + "("
   r += ") " + res + " {\n"
   itm := ""
 
@@ -309,10 +313,9 @@ func (f *FieldDef) GenResolver() string {
       } else if f.Type.Type.GQLType == "graphql.Time" {
         itm = itm + f.Type.Type.GQLType + "{Time: " + dref + "itm}"
       } else {
-        itm = itm + f.Type.Type.GQLType + "{r: " + ref + "itm}"
+        itm = itm + f.Type.Type.GQLType + "{" + ref + "itm}"
       }
     } else {
-
       if f.Type.Type.IsNullable {
         itm = "&itm"
       }
@@ -322,7 +325,7 @@ func (f *FieldDef) GenResolver() string {
       itm = "itm"
     }
     r += "  items := " + returnType + "{}\n"
-    r += "  for _, itm := range r.r." + f.Name + " {\n"
+    r += "  for _, itm := range r.R." + f.Name + " {\n"
     r += "    items = append(items, " + itm + ")\n"
     r += "  }\n"
     r += "  return "
@@ -343,7 +346,7 @@ func (f *FieldDef) GenResolver() string {
 
   if _, ok := KnownGoTypes[f.Type.GQLType]; !ok {
     if f.Type.GQLType == "graphql.ID" {
-      r += "  id := graphql.ID(r.r." + f.Name + ")\n"
+      r += "  id := graphql.ID(r.R." + f.Name + ")\n"
       r += "  return "
       if f.Type.IsNullable {
         r += "&"
@@ -354,16 +357,16 @@ func (f *FieldDef) GenResolver() string {
       if f.Type.IsNullable {
         dref = "*"
       }
-      r += f.Type.GQLType + "{Time: " + dref + "r.r." + f.Name + "}"
+      r += f.Type.GQLType + "{Time: " + dref + "r.R." + f.Name + "}"
     } else {
       ref := ""
       if !f.Type.IsNullable {
         ref = "&"
       }
-      r += f.Type.GQLType + "{r: " + ref + "r.r." + f.Name + "}"
+      r += f.Type.GQLType + "{" + ref + "r.R." + f.Name + "}"
     }
   } else {
-    r += "r.r." + f.Name
+    r += "r.R." + f.Name
   }
 
   r += "\n}"
@@ -542,7 +545,7 @@ func (g Generator) GenSchemaResolversFile() []byte {
           resType.Fields[key] = value
         }
       } else {
-        g.P(gtp.GenStruct())
+        g.P(gtp.GenStruct("struct"))
         g.P("")
 
         g.P(gtp.GenResStruct(""))
@@ -587,7 +590,7 @@ func (g Generator) GenSchemaResolversFile() []byte {
       }
     case gqlINPUT_OBJECT:
       gtp := NewType(typ)
-      g.P(gtp.GenStruct())
+      g.P(gtp.GenStruct("argStruct"))
       g.P("")
     default:
       fmt.Println("unknown graphql type ", *typ.Name(), ":", typ.Kind())
@@ -830,7 +833,7 @@ func parsePost(r *http.Request) (*request, *httpError) {
   }
   r.Body.Close()
 
-  if len(body) > 0 {
+  if len(body) == 0 {
     return nil, &httpError{
       status:  http.StatusBadRequest,
       message: "Missing request body.",
