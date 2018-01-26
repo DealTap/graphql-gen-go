@@ -93,9 +93,8 @@ func main() {
   * [ ] refactor duplicate code
   * [ ] handle imports dynamically instead of hard-coding
   * [ ] option to disable generation of custom http handler   
-  * [ ] option to disable generation of custom http handler   
 
 ## Credit
 
-Hard fork of [graphql-gen-go](https://github.com/euforic/graphql-gen-go) and inspired by [protoc-gen-go](https://github.com/golang/protobuf/protoc-gen-go).
+Hard fork of [graphql-gen-go](https://github.com/euforic/graphql-gen-go) and inspired by [protoc-gen-go](https://github.com/golang/protobuf/tree/master/protoc-gen-go).
 Thanks to [neelance](https://github.com/neelance) for the great [graphql-go](https://github.com/neelance/graphql-go) library. 
