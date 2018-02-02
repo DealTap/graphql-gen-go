@@ -7,3 +7,4 @@ import:
   version: ^0.0.1
 - package: github.com/spf13/viper
   version: ^1.0.0
+- package: github.com/rs/cors # this is required to run the sample-server
