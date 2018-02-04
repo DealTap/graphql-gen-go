@@ -34,7 +34,7 @@ Generates boiler-plate code for [golang graphql](https://github.com/neelance/gra
 * Resolver function is not generated for a GraphQL type which has a property with arguments. 
 It is assumed that such a property would require additional logic; so, it should be implemented manually. 
 Take a look at `sample/api/api-extra.go` for an example
-* A `server.gql.go` file is also generated which implements a custom http handler and runs a GraphQL server. 
+* A `server.gql.go` file is also generated which implements a custom http handler and runs a GraphQL server. It has dependency on graphql-go and cors libraries. 
 You can use this or your own http handler or built in one in [graphql-go](https://github.com/neelance/graphql-go)
 
 ## How to Use Generated Code
@@ -98,3 +98,4 @@ func main() {
 
 Hard fork of [graphql-gen-go](https://github.com/euforic/graphql-gen-go) and inspired by [protoc-gen-go](https://github.com/golang/protobuf/tree/master/protoc-gen-go).
 Thanks to [neelance](https://github.com/neelance) for the great [graphql-go](https://github.com/neelance/graphql-go) library. 
+Http custom handler is inspired by [graphql-go-example](https://github.com/tonyghita/graphql-go-example) 

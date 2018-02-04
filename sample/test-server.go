@@ -163,7 +163,7 @@ func main() {
     people[3],
   }
 
-  gqlSrv := api.NewGqlServer(&resolver{}, Port)
+  gqlSrv := api.NewGqlServer(&resolver{}, Port, nil)
   err := gqlSrv.Serve()
   if err != nil {
     panic(err)

@@ -9,6 +9,7 @@ import (
   "sync"
 
   "github.com/neelance/graphql-go"
+  "github.com/rs/cors"
 )
 
 const (
@@ -19,24 +20,39 @@ const (
 )
 
 type GqlServer struct {
-  Schema *graphql.Schema
-  Port   string
+  Schema      *graphql.Schema
+  Port        string
+  Request     gqlRequest
+  CorsOptions *cors.Options
   // TODO add facebook dataloader
 }
 
-func NewGqlServer(res GqlResolver, port string) *GqlServer {
+func NewGqlServer(res GqlResolver, port string, corsOptions *cors.Options) *GqlServer {
   return &GqlServer{
-    Schema: graphql.MustParseSchema(Schema, res),
-    Port:   port,
+    Schema:      graphql.MustParseSchema(Schema, res),
+    Port:        port,
+    CorsOptions: corsOptions,
   }
 }
 
 func (g *GqlServer) Serve() error {
+
   // TODO should we validate required fields of GqlServer
   addr := ":" + g.Port
   srv := &httpServer{g}
-  http.Handle("/graphql", srv)
-  return http.ListenAndServe(addr, nil)
+  mux := http.NewServeMux()
+
+  // configure pre-flight/cors request handler
+  var c *cors.Cors
+  if g.CorsOptions == nil {
+    c = cors.AllowAll()
+  } else {
+    c = cors.New(*g.CorsOptions)
+  }
+
+  mux.Handle("/graphql", srv)
+  handler := c.Handler(mux)
+  return http.ListenAndServe(addr, handler)
 }
 
 type httpServer struct {
@@ -67,6 +83,7 @@ func (h *httpServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
   // iterate over all parsed requests and use go routine to process them in parallel
   for i, q := range req.requests {
     go func(i int, q gqlRequest) {
+      h.Request = q
       res := h.Schema.Exec(r.Context(), q.Query, q.OpName, q.Variables)
       // FIXME expand returned errors to handle a resolver returning more than one error
       responses[i] = res
@@ -78,7 +95,17 @@ func (h *httpServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
   // TODO should we log errors?
 
-  resp, err := json.Marshal(responses)
+  var err error
+  var resp []byte
+  /**
+    * at this point there should be at least one response.
+    * in case of batch, we send a json array object otherwise a single json object
+   */
+  if req.batch {
+    resp, err = json.Marshal(responses)
+  } else {
+    resp, err = json.Marshal(responses[0])
+  }
   if err != nil {
     http.Error(w, "Server error", http.StatusInternalServerError)
     return
