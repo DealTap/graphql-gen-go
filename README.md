@@ -2,7 +2,7 @@
 
 **Early Stage**
 
-Generates boiler-plate code for [golang graphql](https://github.com/neelance/graphql-go) from graphql schema files.
+Generates boiler-plate code for [golang graphql](https://github.com/graph-gophers/graphql-go) from graphql schema files.
 
 ## Install from source
 
@@ -31,17 +31,17 @@ Generates boiler-plate code for [golang graphql](https://github.com/neelance/gra
 
 ## Notes
 
-* Resolver function is not generated for a GraphQL type which has a property with arguments. 
-It is assumed that such a property would require additional logic; so, it should be implemented manually. 
+* Resolver function is not generated for a GraphQL type which has a property with arguments.
+It is assumed that such a property would require additional logic; so, it should be implemented manually.
 Take a look at `sample/api/api-extra.go` for an example
-* A `server.gql.go` file is also generated which implements a custom http handler and runs a GraphQL server. It has dependency on graphql-go and cors libraries. 
-You can use this or your own http handler or built in one in [graphql-go](https://github.com/neelance/graphql-go)
+* A `server.gql.go` file is also generated which implements a custom http handler and runs a GraphQL server. It has dependency on graphql-go and cors libraries.
+You can use this or your own http handler or built in one in [graphql-go](https://github.com/graph-gophers/graphql-go)
 
 ## How to Use Generated Code
 
 **With generated http handler**
 
-A sample test server is included: `sample/test-server.go`. 
+A sample test server is included: `sample/test-server.go`.
 You can start this sample server by running `make run-sample` and it can be queried like
 ```
 curl -XPOST localhost:7050/graphql -H "Content-Type: application/graphql" \
@@ -60,9 +60,9 @@ func (r *resolver) Person(request api.PersonRequest) api.PersonResolver {
 
 func init() {
   schema, err = graphql.ParseSchema(api.Schema, &resolver{})
-  	if err != nil {
-  		panic(err)
-  	}
+    if err != nil {
+      panic(err)
+    }
 }
 
 func main() {
@@ -86,16 +86,16 @@ func main() {
   * [x] input object
   * [x] union
 * [ ] Custom http handler
-  * [x] minimal implementation 
+  * [x] minimal implementation
   * [ ] Add facebook data loader in custom http handler for batching
   * [ ] option to specify middleware/interceptors that will run before/after executing incoming graphql request i.e., auth check
 * [ ] Improve api/code
   * [ ] refactor duplicate code
   * [ ] handle imports dynamically instead of hard-coding
-  * [ ] option to disable generation of custom http handler   
+  * [ ] option to disable generation of custom http handler
 
 ## Credit
 
 Hard fork of [graphql-gen-go](https://github.com/euforic/graphql-gen-go) and inspired by [protoc-gen-go](https://github.com/golang/protobuf/tree/master/protoc-gen-go).
-Thanks to [neelance](https://github.com/neelance) for the great [graphql-go](https://github.com/neelance/graphql-go) library. 
-Http custom handler is inspired by [graphql-go-example](https://github.com/tonyghita/graphql-go-example) 
+Thanks to [old: neelance -> new: graph-gophers](https://github.com/graph-gophers) for the great [graphql-go](https://github.com/graph-gophers/graphql-go) library.
+Http custom handler is inspired by [graphql-go-example](https://github.com/tonyghita/graphql-go-example)

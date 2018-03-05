@@ -1,7 +1,7 @@
 package api
 
 import (
-  "github.com/neelance/graphql-go"
+  "github.com/graph-gophers/graphql-go"
 )
 
 type File struct {
