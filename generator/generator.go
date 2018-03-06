@@ -8,8 +8,8 @@ import (
   "strings"
   "unicode"
 
-  "github.com/neelance/graphql-go"
-  "github.com/neelance/graphql-go/introspection"
+  "github.com/graph-gophers/graphql-go"
+  "github.com/graph-gophers/graphql-go/introspection"
 )
 
 const (
@@ -72,9 +72,9 @@ func NewType(t *introspection.Type) *TypeDef {
   }
 
   /**
-    * union & input object types do not have fields
-    * so we ignore it to avoid nil pointer dereference error
-    * for input object type we create fields from InputFields instead
+   * union & input object types do not have fields
+   * so we ignore it to avoid nil pointer dereference error
+   * for input object type we create fields from InputFields instead
    */
   if t.Kind() != gqlUNION && t.Kind() != gqlINPUT_OBJECT {
     for _, fld := range *t.Fields(nil) {
@@ -520,7 +520,7 @@ func (g Generator) GenSchemaResolversFile() []byte {
   g.In()
   // FIXME include only when time field is present
   //g.P(`"time"`)
-  g.P(`graphql "github.com/neelance/graphql-go"`)
+  g.P(`graphql "github.com/graph-gophers/graphql-go"`)
   g.Out()
   g.P(")")
   g.P("")
@@ -577,7 +577,7 @@ func (g Generator) GenSchemaResolversFile() []byte {
 
       types = append(types, gtp)
     case gqlENUM:
-      //TODO: should we generate a pseudo enum or stick with string?
+    //TODO: should we generate a pseudo enum or stick with string?
     case gqlUNION:
       gtp := NewType(typ)
 
@@ -637,7 +637,7 @@ func (g Generator) GenServerFile() []byte {
   g.P(`"strings"`)
   g.P(`"sync"`)
   g.P("")
-  g.P(`graphql "github.com/neelance/graphql-go"`)
+  g.P(`graphql "github.com/graph-gophers/graphql-go"`)
   g.P(`"github.com/rs/cors"`)
   g.Out()
   g.P(")")

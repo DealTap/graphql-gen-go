@@ -1,6 +1,6 @@
 package: github.com/dealtap/graphql-gen-go
 import:
-- package: github.com/neelance/graphql-go
+- package: github.com/graph-gophers/graphql-go
   subpackages:
   - introspection
 - package: github.com/spf13/cobra

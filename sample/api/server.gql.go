@@ -8,7 +8,7 @@ import (
   "strings"
   "sync"
 
-  "github.com/neelance/graphql-go"
+  "github.com/graph-gophers/graphql-go"
   "github.com/rs/cors"
 )
 
@@ -98,8 +98,8 @@ func (h *httpServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
   var err error
   var resp []byte
   /**
-    * at this point there should be at least one response.
-    * in case of batch, we send a json array object otherwise a single json object
+   * at this point there should be at least one response.
+   * in case of batch, we send a json array object otherwise a single json object
    */
   if req.batch {
     resp, err = json.Marshal(responses)
