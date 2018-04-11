@@ -637,6 +637,7 @@ func (g Generator) GenServerFile() []byte {
   g.P(`"strings"`)
   g.P(`"sync"`)
   g.P("")
+  g.P(`ferr "bitbucket.org/dealtap/friendlierr"`)
   g.P(`graphql "github.com/graph-gophers/graphql-go"`)
   g.P(`"github.com/rs/cors"`)
   g.Out()
@@ -671,8 +672,8 @@ type GqlServer struct {
 
 func NewGqlServer(res GqlResolver, port string, corsOptions *cors.Options) *GqlServer {
   return &GqlServer{
-    Schema: graphql.MustParseSchema(Schema, res),
-    Port:   port,
+    Schema:      graphql.MustParseSchema(Schema, res),
+    Port:        port,
     CorsOptions: corsOptions,
   }
 }
@@ -697,6 +698,12 @@ func (g *GqlServer) Serve() error {
   return http.ListenAndServe(addr, handler)
 }
 
+type Response struct {
+  Data       json.RawMessage        ` + "`" + `json:"data,omitempty"` + "`" + `
+  Errors     []*ferr.CustomError    ` + "`" + `json:"errors,omitempty"` + "`" + `
+  Extensions map[string]interface{} ` + "`" + `json:"extensions,omitempty"` + "`" + `
+}
+
 type httpServer struct {
   *GqlServer
 }
@@ -704,18 +711,38 @@ type httpServer struct {
 func (h *httpServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
   if isContentSupported(r.Header.Get("Content-Type")) == false {
-    http.Error(w, "GraphQL only supports json and graphql content type.", http.StatusBadRequest)
+    customError := ferr.NewWithStatus("GraphQL only supports json and graphql content type.", http.StatusBadRequest).
+      WithKey("api.bad.request").
+      WithCause(errors.New("content type not supported"))
+
+    resp, err := json.Marshal(&Response{Errors: []*ferr.CustomError{customError}})
+    if err != nil {
+      http.Error(w, err.Error(), http.StatusInternalServerError)
+      return
+    }
+
+    w.Header().Set("Content-Type", ContentTypeJSON)
+    w.WriteHeader(http.StatusOK)
+    w.Write(resp)
     return
   }
 
-  req, htpErr := parse(r)
-  if htpErr != nil {
-    http.Error(w, htpErr.message, htpErr.status)
+  req, customError := parse(r)
+  if customError != nil {
+    resp, err := json.Marshal(&Response{Errors: []*ferr.CustomError{customError}})
+    if err != nil {
+      http.Error(w, err.Error(), http.StatusInternalServerError)
+      return
+    }
+
+    w.Header().Set("Content-Type", ContentTypeJSON)
+    w.WriteHeader(http.StatusOK)
+    w.Write(resp)
     return
   }
 
   numReqs := len(req.requests)
-  responses := make([]*graphql.Response, numReqs)
+  responses := make([]*Response, numReqs)
 
   // Use the WaitGroup to wait for all executions to finish
   // TODO handle facebook data loader
@@ -728,7 +755,19 @@ func (h *httpServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
       h.Request = q
       res := h.Schema.Exec(r.Context(), q.Query, q.OpName, q.Variables)
       // FIXME expand returned errors to handle a resolver returning more than one error
-      responses[i] = res
+      resp := &Response{
+        Data:       res.Data,
+        Extensions: res.Extensions,
+      }
+      for _, err := range res.Errors {
+        resp.Errors = append(resp.Errors, &ferr.CustomError{
+          Status:  http.StatusBadRequest,
+          Key:     "api.bad.request",
+          Message: err.Message,
+          Cause:   err,
+        })
+      }
+      responses[i] = resp
       wg.Done()
     }(i, q)
   }
@@ -742,14 +781,14 @@ func (h *httpServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
   /**
     * at this point there should be at least one response.
     * in case of batch, we send a json array object otherwise a single json object
-   */
+    */
   if req.batch {
     resp, err = json.Marshal(responses)
   } else {
     resp, err = json.Marshal(responses[0])
   }
   if err != nil {
-    http.Error(w, "Server error", http.StatusInternalServerError)
+    http.Error(w, err.Error(), http.StatusInternalServerError)
     return
   }
 
@@ -773,13 +812,7 @@ type gqlRequest struct {
   Variables map[string]interface{} ` + "`" + `json:"variables"` + "`" + `
 }
 
-type httpError struct {
-  status  int
-  message string
-  error
-}
-
-func parse(r *http.Request) (*request, *httpError) {
+func parse(r *http.Request) (*request, *ferr.CustomError) {
 
   if r.Method == Get {
     return parseGet(r)
@@ -787,14 +820,15 @@ func parse(r *http.Request) (*request, *httpError) {
     return parsePost(r)
   }
 
-  return nil, &httpError{
-    status:  http.StatusMethodNotAllowed,
-    message: "GraphQL only supports POST and GET requests.",
-    error:   errors.New(r.Method + " is not allowed"),
+  return nil, &ferr.CustomError{
+    Status:  http.StatusMethodNotAllowed,
+    Key:     "api.method.not.allowed",
+    Message: "GraphQL only supports POST and GET requests.",
+    Cause:   errors.New(r.Method + " is not allowed"),
   }
 }
 
-func parseGet(r *http.Request) (*request, *httpError) {
+func parseGet(r *http.Request) (*request, *ferr.CustomError) {
 
   v := r.URL.Query()
   var (
@@ -807,10 +841,11 @@ func parseGet(r *http.Request) (*request, *httpError) {
   )
 
   if qLen == 0 {
-    return nil, &httpError{
-      status:  http.StatusBadRequest,
-      message: "Missing request parameters",
-      error:   errors.New("missing request parameters"),
+    return nil, &ferr.CustomError{
+      Status:  http.StatusBadRequest,
+      Key:     "api.bad.request",
+      Message: "Missing request parameters",
+      Cause:   errors.New("missing request parameters"),
     }
   }
 
@@ -830,10 +865,11 @@ func parseGet(r *http.Request) (*request, *httpError) {
     if i < vLen {
       variable := variables[i]
       if err := json.Unmarshal([]byte(variable), &m); err != nil {
-        return nil, &httpError{
-          status:  http.StatusBadRequest,
-          message: "Unable to read variables.",
-          error:   err,
+        return nil, &ferr.CustomError{
+          Status:  http.StatusBadRequest,
+          Key:     "api.bad.request",
+          Message: "Unable to read variables.",
+          Cause:   err,
         }
       }
     }
@@ -844,26 +880,28 @@ func parseGet(r *http.Request) (*request, *httpError) {
   return &request{requests: requests, batch: qLen > 1}, nil
 }
 
-func parsePost(r *http.Request) (*request, *httpError) {
+func parsePost(r *http.Request) (*request, *ferr.CustomError) {
 
-  readBodyErr := &httpError{
-    status:  http.StatusBadRequest,
-    message: "Unable to read body.",
+  readBodyErr := &ferr.CustomError{
+    Status:  http.StatusBadRequest,
+    Key:     "api.bad.request",
+    Message: "Unable to read body.",
   }
 
   // read and close the body
   body, err := ioutil.ReadAll(r.Body)
   if err != nil {
-    readBodyErr.error = err
+    readBodyErr.WithCause(err)
     return nil, readBodyErr
   }
   r.Body.Close()
 
   if len(body) == 0 {
-    return nil, &httpError{
-      status:  http.StatusBadRequest,
-      message: "Missing request body.",
-      error:   errors.New("missing request body"),
+    return nil, &ferr.CustomError{
+      Status:  http.StatusBadRequest,
+      Key:     "api.bad.request",
+      Message: "Missing request body.",
+      Cause:   errors.New("missing request body"),
     }
   }
 
@@ -880,13 +918,13 @@ func parsePost(r *http.Request) (*request, *httpError) {
     case '{':
       req := gqlRequest{}
       if err := json.Unmarshal(body, &req); err != nil {
-        readBodyErr.error = err
+        readBodyErr.WithCause(err)
         return nil, readBodyErr
       }
       requests = append(requests, req)
     case '[':
       if err := json.Unmarshal(body, &requests); err != nil {
-        readBodyErr.error = err
+        readBodyErr.WithCause(err)
         return nil, readBodyErr
       }
     }
